@@ -30,6 +30,8 @@ export function orderReducer(state: AppState, action: AppAction): AppState {
       return { ...state, table: action.table, view: 'welcome', lastMessage: i18next.t('message.bind_table', { table: action.table }) }
     case 'SET_VIEW':
       return { ...state, view: action.view }
+    case 'SET_DEMO_ENTRY':
+      return action.state
     case 'ADD_CART': {
       const same = state.cart.find((item) => item.productId === action.item.productId && item.spec === action.item.spec && item.orderedBy === action.item.orderedBy)
       const cart = same

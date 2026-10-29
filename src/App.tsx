@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useReducer, useState } from 'react'
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import i18next from 'i18next'
 import { useTranslation } from 'react-i18next'
 import { ClipboardList, ConciergeBell, LayoutDashboard, Menu as MenuIcon, ShoppingBasket } from 'lucide-react'
 import { HomeView } from '@/components/HomeView'
+import { LoginWelcomeView } from '@/components/LoginWelcomeView'
 import { WelcomeView } from '@/components/WelcomeView'
 import { CartPanel } from '@/components/CartPanel'
 import { CheckoutView } from '@/components/CheckoutView'
@@ -20,9 +21,41 @@ import { products } from '@/data/menu'
 import { money } from '@/lib/utils'
 import type { AppState, ViewName } from '@/types'
 
+const DEMO_LOGIN_KEY = 'demo-login'
+const DEMO_LOGIN_VALUE = 'true'
+const DEMO_LOGIN_DELAY_MS = 350
+
+function readDemoLogin() {
+  try {
+    return localStorage.getItem(DEMO_LOGIN_KEY) === DEMO_LOGIN_VALUE
+  } catch {
+    return false
+  }
+}
+
+function isMenuPreview() {
+  return new URLSearchParams(window.location.search).get('preview') === 'menu'
+}
+
+function persistDemoLogin() {
+  try {
+    localStorage.setItem(DEMO_LOGIN_KEY, DEMO_LOGIN_VALUE)
+  } catch {
+    // localStorage 不可用时由组件内存态继续当前演示会话
+  }
+}
+
+function stateForView(view: ViewName): AppState {
+  if (view !== 'login' && view !== 'home') {
+    return { ...initialState, table: 'A08', view }
+  }
+  return { ...initialState, view: view === 'login' ? 'login' : 'home' }
+}
+
 function createInitialState(): AppState {
   const search = new URLSearchParams(window.location.search)
   const requestedView = initialViewFromHash()
+  const loggedIn = readDemoLogin()
 
   // preview=menu：预置一桌带购物车的点餐态，供设计/截图预览
   if (search.get('preview') === 'menu') {
@@ -37,10 +70,18 @@ function createInitialState(): AppState {
     }
   }
 
+  if (!loggedIn) {
+    return { ...initialState, view: 'login' }
+  }
+
+  if (requestedView === 'login') {
+    return initialState
+  }
+
   // 深链接：直接以 #/welcome 等地址打开时，先绑定示例桌台再进入对应视图；
   // home 无需桌台，其余流程视图（welcome/menu/order/checkout）需要桌台上下文。
   if (requestedView && requestedView !== 'home') {
-    return { ...initialState, table: 'A08', view: requestedView }
+    return stateForView(requestedView)
   }
 
   return initialState
@@ -49,6 +90,14 @@ function createInitialState(): AppState {
 export default function App() {
   const { t, i18n } = useTranslation()
   const [state, dispatch] = useReducer(orderReducer, undefined, createInitialState)
+  const [demoLoggedIn, setDemoLoggedIn] = useState(() => isMenuPreview() || readDemoLogin())
+  const [loginTarget, setLoginTarget] = useState<ViewName | null>(() => {
+    const requestedView = initialViewFromHash()
+    return requestedView && requestedView !== 'login' ? requestedView : null
+  })
+  const [loginLoading, setLoginLoading] = useState(false)
+  const [loginError, setLoginError] = useState<string | null>(null)
+  const loginTimer = useRef<number | null>(null)
   const { enabled: elderly, toggle: toggleElderly } = useElderlyMode()
   const [serviceOpen, setServiceOpen] = useState(false)
   const [consoleOpen, setConsoleOpen] = useState(false)
@@ -56,10 +105,20 @@ export default function App() {
   const cartTotal = state.cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
   const waitingServices = state.services.filter((service) => service.status === 'waiting').length
 
-  // 视图 ↔ URL hash 双向同步；未绑定桌台时只有 home 可达，其余地址回落到 home
-  const canView = useCallback((view: ViewName) => view === 'home' || !!state.table, [state.table])
+  // 视图 ↔ URL hash 双向同步；未登录时只有 login 可达，已登录后 login 会回落到 home。
+  const canView = useCallback((view: ViewName) => {
+    if (!demoLoggedIn) return view === 'login'
+    if (view === 'login') return false
+    return view === 'home' || !!state.table
+  }, [demoLoggedIn, state.table])
   const navigate = useCallback((view: ViewName) => dispatch({ type: 'SET_VIEW', view }), [])
-  useViewRoute(state.view, { onNavigate: navigate, canView })
+  useViewRoute(state.view, { onNavigate: navigate, canView, fallbackView: demoLoggedIn ? 'home' : 'login' })
+
+  useEffect(() => {
+    return () => {
+      if (loginTimer.current) window.clearTimeout(loginTimer.current)
+    }
+  }, [])
 
   useEffect(() => {
     document.documentElement.lang = i18n.language === 'zh' ? 'zh-CN' : 'en'
@@ -84,6 +143,28 @@ export default function App() {
   const handleToggleElderly = () => {
     toggleElderly()
     dispatch({ type: 'SET_MESSAGE', message: elderly ? '已切换为常规模式' : '已切换为老人模式' })
+  }
+  const handleLogin = () => {
+    if (loginLoading) return
+    setLoginLoading(true)
+    setLoginError(null)
+    loginTimer.current = window.setTimeout(() => {
+      try {
+        persistDemoLogin()
+        setDemoLoggedIn(true)
+        const target = loginTarget && loginTarget !== 'login' ? loginTarget : 'home'
+        dispatch({ type: 'SET_DEMO_ENTRY', state: stateForView(target) })
+        setLoginTarget(null)
+      } catch {
+        setLoginError(t('login.error'))
+      } finally {
+        setLoginLoading(false)
+      }
+    }, DEMO_LOGIN_DELAY_MS)
+  }
+
+  if (state.view === 'login' || !demoLoggedIn) {
+    return <LoginWelcomeView loading={loginLoading} error={loginError} onLogin={handleLogin} />
   }
 
   if (state.view === 'home' || !state.table) {

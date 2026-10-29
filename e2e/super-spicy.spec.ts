@@ -1,8 +1,14 @@
 import { test, expect, type Page } from '@playwright/test'
 
+async function signIn(page: Page) {
+  await page.goto('/')
+  await page.getByRole('button', { name: /登录并开始体验|Sign in and start/ }).click()
+  await expect(page).toHaveURL(/#\/home$/)
+}
+
 /** Navigate from app start to the menu view and open a broth product spec dialog. */
 async function goToBrothSpec(page: Page, productIndex = 0) {
-  await page.goto('/')
+  await signIn(page)
   // Bind table
   await page.getByRole('button', { name: /A08/ }).first().click()
   // Welcome page - enter menu

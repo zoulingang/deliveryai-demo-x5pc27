@@ -1,5 +1,5 @@
 export type OrderStage = 'submitted' | 'accepted' | 'cooking' | 'served'
-export type ViewName = 'home' | 'welcome' | 'menu' | 'order' | 'checkout'
+export type ViewName = 'login' | 'home' | 'welcome' | 'menu' | 'order' | 'checkout'
 
 export interface Product {
   id: string
@@ -56,6 +56,7 @@ export interface AppState {
 export type AppAction =
   | { type: 'BIND_TABLE'; table: string }
   | { type: 'SET_VIEW'; view: ViewName }
+  | { type: 'SET_DEMO_ENTRY'; state: AppState }
   | { type: 'ADD_CART'; item: CartItem }
   | { type: 'CHANGE_QTY'; uid: string; delta: number }
   | { type: 'SUBMIT_ORDER' }
