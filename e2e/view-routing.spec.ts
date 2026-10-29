@@ -13,6 +13,19 @@ async function seedSignedIn(page: Page) {
   })
 }
 
+async function expectNoOverlap(first: ReturnType<Page['locator']>, second: ReturnType<Page['locator']>) {
+  const firstBox = await first.boundingBox()
+  const secondBox = await second.boundingBox()
+  expect(firstBox).not.toBeNull()
+  expect(secondBox).not.toBeNull()
+  const separated =
+    firstBox!.x + firstBox!.width <= secondBox!.x ||
+    secondBox!.x + secondBox!.width <= firstBox!.x ||
+    firstBox!.y + firstBox!.height <= secondBox!.y ||
+    secondBox!.y + secondBox!.height <= firstBox!.y
+  expect(separated).toBeTruthy()
+}
+
 /** 从首页绑定 A08 桌台并进入点餐视图（menu）。 */
 async function enterMenu(page: Page) {
   await signIn(page)
@@ -26,6 +39,7 @@ test.describe('视图 URL 路由 - hash 模式', () => {
     await expect(page).toHaveURL(/#\/login$/)
     await expect(page.getByRole('heading', { name: /欢迎来到沸点|Welcome to Boiling Moment/ })).toBeVisible()
     await expect(page.getByRole('button', { name: /登录并开始体验|Sign in and start/ })).toBeVisible()
+    await expect(page.getByRole('button', { name: /注册|找回密码|第三方|Register|Sign up|Forgot|Google|Facebook/ })).toHaveCount(0)
   })
 
   test('REQ-002: 点击登录后进入既有桌台绑定首页', async ({ page }) => {
@@ -39,6 +53,42 @@ test.describe('视图 URL 路由 - hash 模式', () => {
     await expect(page).toHaveURL(/#\/home$/)
     await expect(page.getByRole('heading', { name: /欢迎来到沸点|Welcome to Boiling Moment/ })).not.toBeVisible()
     await expect(page.getByRole('button', { name: /A08/ }).first()).toBeVisible()
+  })
+
+  test('REQ-004: 登录处理中主入口展示 loading 并禁用重复点击', async ({ page }) => {
+    await page.goto('/')
+    await page.getByRole('button', { name: /登录并开始体验|Sign in and start/ }).click()
+    const loadingButton = page.getByRole('button', { name: /正在进入|Signing in/ })
+    await expect(loadingButton).toBeVisible()
+    await expect(loadingButton).toBeDisabled()
+    await expect(page).toHaveURL(/#\/home$/)
+  })
+
+  test('REQ-005: 英文环境展示登录欢迎页文案并可继续登录', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('i18nextLng', 'en')
+    })
+    await page.goto('/')
+    await expect(page.locator('html')).toHaveAttribute('lang', 'en')
+    await expect(page.getByRole('heading', { name: 'Welcome to Boiling Moment' })).toBeVisible()
+    await expect(page.getByText('Sign in to continue the table ordering and store fulfillment demo.')).toBeVisible()
+    await page.getByRole('button', { name: 'Sign in and start' }).click()
+    await expect(page).toHaveURL(/#\/home$/)
+  })
+
+  test('REQ-005: 移动端登录欢迎页首屏内容可读且主入口可点击', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto('/')
+    const title = page.getByRole('heading', { name: /欢迎来到沸点|Welcome to Boiling Moment/ })
+    const desc = page.getByText(/登录后继续体验桌台绑定、协同点餐与门店履约流程|Sign in to continue the table ordering/)
+    const action = page.getByRole('button', { name: /登录并开始体验|Sign in and start/ })
+    await expect(title).toBeVisible()
+    await expect(desc).toBeVisible()
+    await expect(action).toBeVisible()
+    await expectNoOverlap(title, desc)
+    await expectNoOverlap(desc, action)
+    await action.click()
+    await expect(page).toHaveURL(/#\/home$/)
   })
 
   test('ROUTE-002: 主流程各视图拥有独立地址', async ({ page }) => {
