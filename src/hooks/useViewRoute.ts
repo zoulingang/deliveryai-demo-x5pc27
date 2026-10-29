@@ -1,10 +1,10 @@
 import { useEffect } from 'react'
 import type { ViewName } from '@/types'
 
-// 主流程视图与 URL hash 的一一映射：home → welcome → menu → order → checkout。
+// 主流程视图与 URL hash 的一一映射：login → home → welcome → menu → order → checkout。
 // 用 hash 路由（而非 History 路由）以兼容 Vite base './' 与 GitHub Pages 子路径部署：
 // hash 不会发往服务器，静态托管只需返回 index.html，dist 直接 file:// 打开也能路由。
-const VIEWS: ViewName[] = ['home', 'welcome', 'menu', 'order', 'checkout']
+const VIEWS: ViewName[] = ['login', 'home', 'welcome', 'menu', 'order', 'checkout']
 
 export const viewToHash = (view: ViewName) => `#/${view}`
 
@@ -22,16 +22,18 @@ export function initialViewFromHash(): ViewName | null {
 interface UseViewRouteOptions {
   /** 将 hash 驱动的导航（浏览器前进/后退或手动改地址）应用到应用状态。 */
   onNavigate: (view: ViewName) => void
-  /** 当前状态下某视图是否可达；不可达的请求回落到 home（内存态应用无桌台时无法进入点餐流程）。 */
+  /** 当前状态下某视图是否可达；不可达的请求回落到 fallbackView。 */
   canView?: (view: ViewName) => boolean
+  /** 非法或不可达地址的回落视图。 */
+  fallbackView?: ViewName
 }
 
 /**
  * 保持当前视图与 URL hash 双向同步：
- * - 视图变化时写入 `#/<view>`，使 home/welcome/menu/order/checkout 拥有各自的地址并生成历史记录。
+ * - 视图变化时写入 `#/<view>`，使 login/home/welcome/menu/order/checkout 拥有各自的地址并生成历史记录。
  * - 监听 `hashchange`，响应浏览器前进/后退与手动改地址；非法或不可达的地址会被纠正。
  */
-export function useViewRoute(view: ViewName, { onNavigate, canView }: UseViewRouteOptions) {
+export function useViewRoute(view: ViewName, { onNavigate, canView, fallbackView = 'home' }: UseViewRouteOptions) {
   // 视图 → hash
   useEffect(() => {
     const target = viewToHash(view)
@@ -47,7 +49,7 @@ export function useViewRoute(view: ViewName, { onNavigate, canView }: UseViewRou
   useEffect(() => {
     const handler = () => {
       const requested = hashToView(window.location.hash)
-      const target = requested && (!canView || canView(requested)) ? requested : 'home'
+      const target = requested && (!canView || canView(requested)) ? requested : fallbackView
       if (target !== requested) {
         window.history.replaceState(null, '', viewToHash(target)) // 纠正非法/不可达地址
       }
@@ -55,5 +57,5 @@ export function useViewRoute(view: ViewName, { onNavigate, canView }: UseViewRou
     }
     window.addEventListener('hashchange', handler)
     return () => window.removeEventListener('hashchange', handler)
-  }, [view, onNavigate, canView])
+  }, [view, onNavigate, canView, fallbackView])
 }
